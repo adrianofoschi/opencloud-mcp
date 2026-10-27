@@ -1,0 +1,54 @@
+name: Publish image
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  secret-scan:
+    uses: ./.github/workflows/secret-scan.yml
+
+  publish:
+    name: Publish
+    needs: [checks, secret-scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH" >&2; exit 1
+          fi
+          if [[ "$(node -p "require('./package.json').version")" != "${GITHUB_REF_NAME#v}" ]]; then
+            echo "Tag version and package version differ" >&2; exit 1
+          fi
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Build image
+        run: docker build --platform linux/amd64 --label "org.opencontainers.image.version=$GITHUB_REF_NAME" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$IMAGE" .
+
+      - name: Publish image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE"
+          echo "Published $IMAGE" >> "$GITHUB_STEP_SUMMARY"

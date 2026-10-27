@@ -1,0 +1,27 @@
+{
+  "name": "opencloud-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that searches and reads the files an OpenCloud user can see.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm install --frozen-lockfile && pnpm audit --audit-level high && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "fast-xml-parser": "5.11.2"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
