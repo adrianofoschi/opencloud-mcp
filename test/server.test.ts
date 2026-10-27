@@ -35,23 +35,26 @@ function entry(path: string, name: string, type: string, size: number, highlight
     + `<d:getcontenttype>${type}</d:getcontenttype><d:getcontentlength>${size}</d:getcontentlength>`
     + '<d:getlastmodified>Mon, 21 Oct 2024 10:00:00 GMT</d:getlastmodified><d:resourcetype/>'
     + (highlights ? `<oc:highlights>${highlights}</oc:highlights>` : '<oc:highlights/>')
+    + `<oc:privatelink>https://cloud.example.com/f/${encodeURIComponent(name)}</oc:privatelink>`
     + '</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>';
 }
 
 /** OpenCloud as seen on a real 7.2 instance: content patterns return highlights, name patterns do not. */
-async function fakeOpenCloud(patterns: string[], files: Record<string, { type: string; body: string }>) {
+async function fakeOpenCloud(patterns: string[], searched: string[], files: Record<string, { type: string; body: string }>) {
   return listen(createServer(async (request, response) => {
     if (request.headers.authorization !== credentials) return void response.writeHead(401).end();
     if (request.method === 'REPORT' && request.url === '/dav/spaces/') {
-      const pattern = /<oc:pattern>(.*)<\/oc:pattern>/.exec((await read(request)).toString())?.[1] ?? '';
+      const body = (await read(request)).toString();
+      searched.push(body);
+      const pattern = /<oc:pattern>(.*)<\/oc:pattern>/.exec(body)?.[1] ?? '';
       patterns.push(pattern);
-      const body = pattern.startsWith('content:')
+      const found = pattern.startsWith('content:')
         ? entry('Fatture/2024-05-10_fattura-lavatrice.pdf', '2024-05-10_fattura-lavatrice.pdf', 'application/pdf', 4096,
           '&amp;lt;mark&amp;gt;Fattura&amp;lt;/mark&amp;gt; lavatrice&amp;#xA;totale 499 EUR')
         : entry('Fatture/2024-05-10_fattura-lavatrice.pdf', '2024-05-10_fattura-lavatrice.pdf', 'application/pdf', 4096)
           + entry('Note/fattura%20da%20pagare.txt', 'fattura da pagare.txt', 'text/plain', 30);
       return void response.writeHead(207, { 'content-type': 'application/xml' })
-        .end(`<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">${body}</d:multistatus>`);
+        .end(`<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">${found}</d:multistatus>`);
     }
     const file = files[decodeURIComponent(request.url ?? '')];
     if (request.method === 'GET' && file) return void response.writeHead(200, { 'content-type': file.type }).end(file.body);
@@ -68,9 +71,10 @@ async function fakeTika(seen: string[]) {
 
 async function started(options: Readonly<{ tika?: boolean; readMaxChars?: number }> = {}) {
   const patterns: string[] = [];
+  const searched: string[] = [];
   const extracted: string[] = [];
   const logs: Array<Record<string, unknown>> = [];
-  const openCloudUrl = await fakeOpenCloud(patterns, {
+  const openCloudUrl = await fakeOpenCloud(patterns, searched, {
     [`${space}/Fatture/2024-05-10_fattura-lavatrice.pdf`]: { type: 'application/pdf', body: '%PDF-1.7 binary' },
     [`${space}/Note/fattura da pagare.txt`]: { type: 'text/plain; charset=utf-8', body: 'abcdefghij'.repeat(100) },
   });
@@ -82,7 +86,7 @@ async function started(options: Readonly<{ tika?: boolean; readMaxChars?: number
   const origin = await listen(createHttpServer(() => createToolServer({ openCloud, config, version: '9.9.9',
     log: fields => { logs.push(fields); },
     ...(tikaUrl ? { extract: (bytes, type) => extractText(tikaUrl, bytes, type) } : {}) }), config.mcpToken));
-  return { url: new URL('/mcp', origin), origin, patterns, extracted, logs };
+  return { url: new URL('/mcp', origin), origin, patterns, searched, extracted, logs };
 }
 
 async function connected(url: URL, token = 'mcp-secret') {
@@ -101,16 +105,19 @@ describe('opencloud-mcp', () => {
   });
 
   it('searches names and content, content matches first with their excerpt, each file once', async () => {
-    const { url, patterns } = await started();
+    const { url, patterns, searched } = await started();
     const client = await connected(url);
     const result = await client.callTool({ name: 'search_files', arguments: { query: 'fattura (lavatrice)' } });
     expect(patterns.sort()).toEqual(['*fattura*lavatrice*', 'content:fattura content:lavatrice']);
+    expect(searched.every(body => body.includes('<oc:privatelink/>'))).toBe(true);
     expect(result.structuredContent).toEqual({ results: [
       { file: `${space}/Fatture/2024-05-10_fattura-lavatrice.pdf`, name: '2024-05-10_fattura-lavatrice.pdf',
         path: '/Fatture/2024-05-10_fattura-lavatrice.pdf', type: 'file', contentType: 'application/pdf', size: 4096,
-        modified: '2024-10-21T10:00:00.000Z', excerpt: 'Fattura lavatrice totale 499 EUR' },
+        modified: '2024-10-21T10:00:00.000Z', excerpt: 'Fattura lavatrice totale 499 EUR',
+        link: 'https://cloud.example.com/f/2024-05-10_fattura-lavatrice.pdf' },
       { file: `${space}/Note/fattura%20da%20pagare.txt`, name: 'fattura da pagare.txt', path: '/Note/fattura da pagare.txt',
-        type: 'file', contentType: 'text/plain', size: 30, modified: '2024-10-21T10:00:00.000Z' },
+        type: 'file', contentType: 'text/plain', size: 30, modified: '2024-10-21T10:00:00.000Z',
+        link: 'https://cloud.example.com/f/fattura%20da%20pagare.txt' },
     ] });
   });
 

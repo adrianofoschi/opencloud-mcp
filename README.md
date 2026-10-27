@@ -6,7 +6,7 @@ It was written for [Ambrogio](https://github.com/ambrogio-app), and works with a
 
 | Tool | What it does |
 |---|---|
-| `search_files` | Finds files by the words in their name and in their text. The text search uses OpenCloud's full-text index, so it also finds words inside PDFs and office documents when OpenCloud extracts their text with Apache Tika. Content matches come first, with an excerpt around the words. |
+| `search_files` | Finds files by the words in their name and in their text. The text search uses OpenCloud's full-text index, so it also finds words inside PDFs and office documents when OpenCloud extracts their text with Apache Tika. Content matches come first, with an excerpt around the words. Each result has a `link` that opens the file in the OpenCloud web interface, for anyone who has access to it. |
 | `read_file` | Returns the text of a file found by `search_files`. Text files are read as they are; PDFs and office documents go through Apache Tika. Long texts come in parts: the result gives `nextOffset` to read the next one. |
 
 The server sees exactly what the OpenCloud user sees. Create a dedicated user, give it the **Viewer** role in a

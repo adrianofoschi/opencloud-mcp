@@ -42,7 +42,8 @@ export function createToolServer(dependencies: ToolDependencies): McpServer {
 
   server.registerTool('search_files', {
     description: 'Search the OpenCloud files you can see by words in their name or in their text, including PDFs and '
-      + 'office documents. Returns the files, content matches first, with an excerpt around the words found.',
+      + 'office documents. Returns the files, content matches first, with an excerpt around the words found and a link '
+      + 'that opens the file in OpenCloud.',
     inputSchema: fromJsonSchema<SearchArguments>({ type: 'object', additionalProperties: false, required: ['query'],
       properties: {
         query: { type: 'string', minLength: 1, maxLength: 200, description: 'Words to find; all of them must match.' },

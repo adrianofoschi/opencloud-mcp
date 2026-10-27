@@ -1,6 +1,6 @@
 {
   "name": "opencloud-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server that searches and reads the files an OpenCloud user can see.",
   "license": "MIT",
   "private": true,

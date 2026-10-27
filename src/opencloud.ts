@@ -14,6 +14,8 @@ export type FoundFile = Readonly<{
   modified?: string;
   /** The text around the words found in the content, when the match is in the content. */
   excerpt?: string;
+  /** Address that opens the file in the OpenCloud web interface, for anyone who has access to it. */
+  link?: string;
 }>;
 
 export type DownloadedFile = Readonly<{ name: string; contentType: string; bytes: Uint8Array }>;
@@ -46,7 +48,7 @@ export class OpenCloud {
   async search(pattern: string, limit: number): Promise<FoundFile[]> {
     const body = '<?xml version="1.0" encoding="UTF-8"?>'
       + '<oc:search-files xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop>'
-      + '<oc:name/><d:getcontenttype/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/><oc:highlights/>'
+      + '<oc:name/><d:getcontenttype/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/><oc:highlights/><oc:privatelink/>'
       + `</d:prop><oc:search><oc:pattern>${escapeXml(pattern)}</oc:pattern><oc:limit>${limit}</oc:limit></oc:search>`
       + '</oc:search-files>';
     let response: Response;
@@ -89,7 +91,7 @@ export class OpenCloud {
   }
 }
 
-type Prop = Partial<Record<'name' | 'getcontenttype' | 'getcontentlength' | 'getlastmodified' | 'highlights', string>>
+type Prop = Partial<Record<'name' | 'getcontenttype' | 'getcontentlength' | 'getlastmodified' | 'highlights' | 'privatelink', string>>
   & { resourcetype?: unknown };
 
 function parseMultistatus(xml: string): FoundFile[] {
@@ -109,6 +111,7 @@ function parseMultistatus(xml: string): FoundFile[] {
       ...(prop.getcontenttype ? { contentType: prop.getcontenttype } : {}),
       ...(Number.isFinite(size) && prop.getcontentlength !== undefined ? { size } : {}),
       ...(prop.getlastmodified ? { modified: new Date(prop.getlastmodified).toISOString() } : {}),
-      ...(excerpt ? { excerpt } : {}) }];
+      ...(excerpt ? { excerpt } : {}),
+      ...(prop.privatelink && /^https?:\/\//.test(prop.privatelink) ? { link: prop.privatelink } : {}) }];
   });
 }
