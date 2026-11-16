@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { Readable } from 'node:stream';
+import { pipeline, Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { createMcpHandler, type McpServer } from '@modelcontextprotocol/server';
 
@@ -48,9 +48,14 @@ export function createHttpServer(factory: () => McpServer, mcpToken: string): Se
         if (typeof value === 'string') headers.set(name, value);
         else if (Array.isArray(value)) for (const item of value) headers.append(name, item);
       }
-      const answer = await handler.fetch(new Request(`http://localhost${request.url}`, { method: 'POST', headers, body: payload.toString('utf8') }));
+      // Abort when the client disconnects so the SDK closes long-lived streams.
+      const closed = new AbortController();
+      response.once('close', () => closed.abort());
+      const answer = await handler.fetch(new Request(`http://localhost${request.url}`,
+        { method: 'POST', headers, body: payload.toString('utf8'), signal: closed.signal }));
+      if (closed.signal.aborted) return void await answer.body?.cancel();
       response.writeHead(answer.status, Object.fromEntries(answer.headers));
-      if (answer.body) Readable.fromWeb(answer.body as unknown as NodeReadableStream).pipe(response);
+      if (answer.body) pipeline(Readable.fromWeb(answer.body as unknown as NodeReadableStream), response, () => {});
       else response.end();
     })().catch(() => { if (!response.headersSent) end(response, 500); else response.end(); });
   });
