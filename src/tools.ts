@@ -17,6 +17,18 @@ type ReadArguments = Readonly<{ file: string; offset?: number }>;
 const maxResults = 20;
 const defaultResults = 10;
 
+// Built once: the SDK caches a validator per schema object, so building them per request leaks memory.
+const searchInput = fromJsonSchema<SearchArguments>({ type: 'object', additionalProperties: false, required: ['query'],
+  properties: {
+    query: { type: 'string', minLength: 1, maxLength: 200, description: 'Words to find; all of them must match.' },
+    limit: { type: 'integer', minimum: 1, maximum: maxResults, description: `Number of files, ${defaultResults} by default.` },
+  } });
+const readInput = fromJsonSchema<ReadArguments>({ type: 'object', additionalProperties: false, required: ['file'],
+  properties: {
+    file: { type: 'string', minLength: 1, maxLength: 2000, description: 'The file field of a search result.' },
+    offset: { type: 'integer', minimum: 0, description: 'First character to return, 0 by default.' },
+  } });
+
 /** Text types read as they are; anything else goes through Tika. */
 function isText(contentType: string): boolean {
   return contentType.startsWith('text/') || ['application/json', 'application/xml', 'application/csv'].includes(contentType);
@@ -44,11 +56,7 @@ export function createToolServer(dependencies: ToolDependencies): McpServer {
     description: 'Search the OpenCloud files you can see by words in their name or in their text, including PDFs and '
       + 'office documents. Returns the files, content matches first, with an excerpt around the words found and a link '
       + 'that opens the file in OpenCloud.',
-    inputSchema: fromJsonSchema<SearchArguments>({ type: 'object', additionalProperties: false, required: ['query'],
-      properties: {
-        query: { type: 'string', minLength: 1, maxLength: 200, description: 'Words to find; all of them must match.' },
-        limit: { type: 'integer', minimum: 1, maximum: maxResults, description: `Number of files, ${defaultResults} by default.` },
-      } }),
+    inputSchema: searchInput,
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ query, limit }) => {
     const patterns = searchPatterns(query);
@@ -67,11 +75,7 @@ export function createToolServer(dependencies: ToolDependencies): McpServer {
   server.registerTool('read_file', {
     description: 'Read the text of a file found by search_files, including PDFs and office documents. Long texts are '
       + 'returned in parts: call again with nextOffset to read the next part.',
-    inputSchema: fromJsonSchema<ReadArguments>({ type: 'object', additionalProperties: false, required: ['file'],
-      properties: {
-        file: { type: 'string', minLength: 1, maxLength: 2000, description: 'The file field of a search result.' },
-        offset: { type: 'integer', minimum: 0, description: 'First character to return, 0 by default.' },
-      } }),
+    inputSchema: readInput,
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ file, offset }) => {
     try {
